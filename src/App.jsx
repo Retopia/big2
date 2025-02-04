@@ -39,164 +39,223 @@ const INITIAL_STATE = () => {
 function App() {
   const [gameState, setGameState] = useState(INITIAL_STATE);
   const [debugMode, setDebugMode] = useState(false);
+  const [isGameActive, setIsGameActive] = useState(true);
 
   // Function to update game state after a move
   // Add these debug logs in the playMove function
   const playMove = (playerId, playedCards) => {
-    setGameState(prevState => {
-      console.log('--- Turn Debug Info ---');
-      console.log('Current player:', playerId);
-      console.log('Played cards:', playedCards);
-      console.log('Active players:', prevState.players.filter(p => p.hand.length > 0 && p.rank === null));
-      console.log('Passed players:', Array.from(prevState.passedPlayers));
-      console.log('Last valid player:', prevState.lastValidPlayerId);
+    if (isGameActive) {
+      setGameState(prevState => {
+        console.log('--- Turn Debug Info ---');
+        console.log('Current player:', playerId);
+        console.log('Played cards:', playedCards);
+        console.log(
+          'Active players (prev state):',
+          prevState.players.filter(p => p.hand.length > 0 && p.rank === null)
+        );
+        console.log('Passed players:', Array.from(prevState.passedPlayers));
+        console.log('Last valid player:', prevState.lastValidPlayerId);
 
-      const isPassing = playedCards.length === 0;
-      const updatedPassedPlayers = new Set(prevState.passedPlayers);
-
-      if (isPassing) {
-        updatedPassedPlayers.add(playerId);
-      }
-
-      // Get active players (those with cards and no rank yet)
-      const activePlayers = prevState.players.filter(p =>
-        p.hand.length > 0 && p.rank === null
-      );
-
-      // Check if everyone except one active player has passed
-      let shouldClearTable = false;
-      if (prevState.lastValidPlayerId !== null) {
-        const passCount = updatedPassedPlayers.size;
-        shouldClearTable = passCount >= activePlayers.length - 1;
-        console.log('Pass count:', passCount);
-        console.log('Active players count:', activePlayers.length);
-        console.log('Should clear table:', shouldClearTable);
-      }
-
-      // Remove played cards and update players
-      const updatedPlayers = prevState.players.map(player => {
-        if (player.id === playerId && !isPassing) {
-          const newHand = player.hand.filter(card =>
-            !playedCards.some(played =>
-              played.suit === card.suit && played.rank === card.rank
-            )
-          );
-          if (newHand.length === 0 && player.hand.length > 0) {
-            return { ...player, hand: newHand, rank: prevState.currentRank };
-          }
-          return { ...player, hand: newHand };
+        const isPassing = playedCards.length === 0;
+        // Start with a copy of the passed players from the previous state.
+        const updatedPassedPlayers = new Set(prevState.passedPlayers);
+        if (isPassing) {
+          updatedPassedPlayers.add(playerId);
         }
-        return player;
-      });
 
-      // Find next player
-      let nextPlayer = (prevState.currentPlayer + 1) % prevState.players.length;
-      const startingPlayer = nextPlayer; // Remember where we started to detect full loops
+        // Update the player's hand if they're playing cards.
+        const updatedPlayers = prevState.players.map(player => {
+          if (player.id === playerId && !isPassing) {
+            const newHand = player.hand.filter(card =>
+              !playedCards.some(
+                played => played.suit === card.suit && played.rank === card.rank
+              )
+            );
+            // If the player just finished their hand, assign them the current rank.
+            if (newHand.length === 0 && player.hand.length > 0) {
+              return { ...player, hand: newHand, rank: prevState.currentRank };
+            }
+            return { ...player, hand: newHand };
+          }
+          return player;
+        });
 
-      if (shouldClearTable && prevState.lastValidPlayerId !== null) {
-        nextPlayer = prevState.lastValidPlayerId;
-        console.log('Table cleared, next player:', nextPlayer);
-      } else {
-        // Keep track of if we make a full loop
-        let madeFullLoop = false;
+        // Recalculate active players based on the updated state.
+        const activePlayersUpdated = updatedPlayers.filter(
+          p => p.hand.length > 0 && p.rank === null
+        );
 
-        // Skip players who have passed, have no cards, or already have a rank
-        while (
-          (updatedPassedPlayers.has(nextPlayer) ||
+        // Remove players who have finished from the passed set.
+        const filteredPassedPlayers = new Set();
+        updatedPassedPlayers.forEach(id => {
+          const player = updatedPlayers.find(p => p.id === id);
+          if (player && player.hand.length > 0 && player.rank === null) {
+            filteredPassedPlayers.add(id);
+          }
+        });
+
+        // Decide if the table should be cleared.
+        let shouldClearTable = false;
+        if (prevState.lastValidPlayerId !== null) {
+          const passCount = filteredPassedPlayers.size;
+          shouldClearTable = passCount >= activePlayersUpdated.length - 1;
+          console.log('Pass count:', passCount);
+          console.log('Active players count:', activePlayersUpdated.length);
+          console.log('Should clear table:', shouldClearTable);
+        }
+
+        // Determine the next player.
+        let nextPlayer = (prevState.currentPlayer + 1) % prevState.players.length;
+        const startingPlayer = nextPlayer;
+        if (shouldClearTable && prevState.lastValidPlayerId !== null) {
+          // First check if lastValidPlayerId is still a valid player
+          if (updatedPlayers[prevState.lastValidPlayerId].hand.length > 0 &&
+            updatedPlayers[prevState.lastValidPlayerId].rank === null) {
+            nextPlayer = prevState.lastValidPlayerId;
+          } else {
+            // If last valid player is no longer valid, find the next valid player
+            nextPlayer = prevState.lastValidPlayerId;
+            const startingPlayer = nextPlayer;
+
+            do {
+              nextPlayer = (nextPlayer + 1) % prevState.players.length;
+
+              // Check if current player is valid
+              if (updatedPlayers[nextPlayer].hand.length > 0 &&
+                updatedPlayers[nextPlayer].rank === null) {
+                break; // Found a valid player
+              }
+
+            } while (nextPlayer !== startingPlayer);
+
+            // If no valid player found in the loop, find the first valid player from the beginning
+            if (nextPlayer === startingPlayer) {
+              for (let i = 0; i < prevState.players.length; i++) {
+                if (updatedPlayers[i].hand.length > 0 &&
+                  updatedPlayers[i].rank === null) {
+                  nextPlayer = i;
+                  break;
+                }
+              }
+            }
+          }
+
+          console.log('Table cleared, next player after looping:', nextPlayer);
+
+          // Verify the selected next player is actually valid
+          if (updatedPlayers[nextPlayer].hand.length === 0 ||
+            updatedPlayers[nextPlayer].rank !== null) {
+            console.warn('Warning: Selected next player is invalid, game might be finished');
+          }
+        }
+        else {
+          let madeFullLoop = false;
+          // Skip players who have passed, have no cards, or already finished.
+          while (
+            filteredPassedPlayers.has(nextPlayer) ||
             updatedPlayers[nextPlayer].hand.length === 0 ||
-            updatedPlayers[nextPlayer].rank !== null)
-        ) {
-          nextPlayer = (nextPlayer + 1) % prevState.players.length;
-
-          // If we've made a full loop and haven't found a valid player
-          if (nextPlayer === startingPlayer) {
-            madeFullLoop = true;
-            break;
-          }
-        }
-
-        console.log('Next player after skipping:', nextPlayer);
-        console.log('Made full loop:', madeFullLoop);
-
-        // If we made a full loop and couldn't find a valid next player,
-        // we should clear the table and reset passed players
-        if (madeFullLoop) {
-          shouldClearTable = true;
-          updatedPassedPlayers.clear();
-          nextPlayer = prevState.lastValidPlayerId || 0;
-          console.log('Forced table clear, next player:', nextPlayer);
-        }
-      }
-
-      const newRank = updatedPlayers.some(p =>
-        p.hand.length === 0 && p.rank === prevState.currentRank
-      ) ? prevState.currentRank + 1 : prevState.currentRank;
-
-      // Add this section
-      // If 3 players have finished, automatically assign last place to remaining player
-      const finishedPlayers = updatedPlayers.filter(p => p.rank !== null).length;
-      if (finishedPlayers === 3) {
-        // Find the last player and assign them 4th place
-        const lastPlayer = updatedPlayers.find(p => p.rank === null);
-        if (lastPlayer) {
-          lastPlayer.rank = 4;
-        }
-      }
-
-      // When calculating newLastValidPlayerId
-      let newLastValidPlayerId;
-      if (isPassing) {
-        newLastValidPlayerId = prevState.lastValidPlayerId;
-      } else {
-        // Only set lastValidPlayerId to current player if they haven't just won
-        const playerJustWon = updatedPlayers[playerId].hand.length === 0;
-        if (!playerJustWon) {
-          newLastValidPlayerId = playerId;
-        } else {
-          // If winning player made last play, find next active player
-          let nextId = (playerId + 1) % prevState.players.length;
-          const startId = nextId;
-          do {
-            if (activePlayers.some(p => p.id === nextId)) {
-              newLastValidPlayerId = nextId;
+            updatedPlayers[nextPlayer].rank !== null
+          ) {
+            nextPlayer = (nextPlayer + 1) % prevState.players.length;
+            if (nextPlayer === startingPlayer) {
+              madeFullLoop = true;
               break;
             }
-            nextId = (nextId + 1) % prevState.players.length;
-          } while (nextId !== startId);
-          // If no active players found, use first active player
-          if (nextId === startId) {
-            newLastValidPlayerId = activePlayers[0]?.id ?? null;
+          }
+          console.log('Next player after skipping:', nextPlayer);
+          console.log('Made full loop:', madeFullLoop);
+          if (madeFullLoop) {
+            shouldClearTable = true;
+            filteredPassedPlayers.clear();
+            nextPlayer = prevState.lastValidPlayerId || 0;
+            console.log('Forced table clear, next player:', nextPlayer);
           }
         }
-      }
 
-      const newState = {
-        ...prevState,
-        players: updatedPlayers,
-        currentPlayer: nextPlayer,
-        tableCards: shouldClearTable ? [] : (isPassing ? prevState.tableCards : playedCards),
-        isGameStart: false,
-        passedPlayers: shouldClearTable ? new Set() : updatedPassedPlayers,
-        lastValidPlayerId: isPassing ? newLastValidPlayerId : playerId,
-        currentRank: newRank,
-      };
+        // Update the finishing rank if a player just won.
+        const newRank = updatedPlayers.some(
+          p => p.hand.length === 0 && p.rank === prevState.currentRank
+        )
+          ? prevState.currentRank + 1
+          : prevState.currentRank;
 
-      console.log('New game state:', {
-        currentPlayer: newState.currentPlayer,
-        tableCards: newState.tableCards,
-        passedPlayers: Array.from(newState.passedPlayers),
-        lastValidPlayerId: newState.lastValidPlayerId
+        // If 3 players are finished, auto-assign the remaining player 4th place.
+        const finishedPlayers = updatedPlayers.filter(p => p.rank !== null).length;
+        if (finishedPlayers === 3) {
+          const lastPlayer = updatedPlayers.find(p => p.rank === null);
+          if (lastPlayer) {
+            lastPlayer.rank = 4;
+          }
+        }
+
+        // Calculate the new last valid player.
+        let newLastValidPlayerId;
+        if (isPassing) {
+          newLastValidPlayerId = prevState.lastValidPlayerId;
+        } else {
+          const playerJustWon = updatedPlayers[playerId].hand.length === 0;
+          if (!playerJustWon) {
+            newLastValidPlayerId = playerId;
+          } else {
+            // Find the next active player from the updated players.
+            let nextId = (playerId + 1) % prevState.players.length;
+            const startId = nextId;
+            do {
+              if (activePlayersUpdated.some(p => p.id === nextId)) {
+                newLastValidPlayerId = nextId;
+                break;
+              }
+              nextId = (nextId + 1) % prevState.players.length;
+            } while (nextId !== startId);
+            if (newLastValidPlayerId === undefined) {
+              newLastValidPlayerId = activePlayersUpdated[0]?.id ?? null;
+            }
+          }
+        }
+
+        const newState = {
+          ...prevState,
+          players: updatedPlayers,
+          currentPlayer: nextPlayer,
+          tableCards: shouldClearTable
+            ? []
+            : isPassing
+              ? prevState.tableCards
+              : playedCards,
+          isGameStart: false,
+          passedPlayers: shouldClearTable ? new Set() : filteredPassedPlayers,
+          lastValidPlayerId: isPassing ? newLastValidPlayerId : playerId,
+          currentRank: newRank,
+        };
+
+        console.log('New game state:', {
+          currentPlayer: newState.currentPlayer,
+          tableCards: newState.tableCards,
+          passedPlayers: Array.from(newState.passedPlayers),
+          lastValidPlayerId: newState.lastValidPlayerId,
+        });
+
+        return newState;
       });
-
-      return newState;
-    });
+    }
   };
 
   // AI Move with slight delay
   useEffect(() => {
     const currentPlayer = gameState.players[gameState.currentPlayer];
 
-    if (!currentPlayer.isHuman) {
+    let rankCount = 0;
+    gameState.players.forEach(player => {
+      if (player.rank !== null) {
+        rankCount++;
+      }
+    });
+
+    if (rankCount === 4) {
+      setIsGameActive(false)
+    }
+
+    if (!currentPlayer.isHuman && isGameActive) {
       console.log('AI Turn Debug:', {
         playerId: currentPlayer.id,
         handSize: currentPlayer.hand.length,
@@ -252,7 +311,7 @@ function App() {
         } else {
           playMove(currentPlayer.id, []);  // Skip if already passed or no cards
         }
-      }, 1000);
+      }, 100);
 
       return () => clearTimeout(timer);
     }
@@ -277,7 +336,7 @@ function App() {
       </div>
 
       {/* Display human player's hand */}
-      <HumanHand gameState={gameState} onPlay={handleHumanMove} />
+      {isGameActive && <HumanHand gameState={gameState} onPlay={handleHumanMove} />}
 
       {/* Display table cards */}
       <div>
