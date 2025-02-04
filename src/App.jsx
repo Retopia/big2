@@ -311,7 +311,7 @@ function App() {
         } else {
           playMove(currentPlayer.id, []);  // Skip if already passed or no cards
         }
-      }, 100);
+      }, 1000);
 
       return () => clearTimeout(timer);
     }
