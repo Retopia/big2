@@ -143,25 +143,30 @@ function App() {
         }
       }
 
-      // Calculate new lastValidPlayerId
-      let newLastValidPlayerId = isPassing ? prevState.lastValidPlayerId : playerId;
-      // If lastValidPlayerId is no longer active, find next active player clockwise
-      if (!activePlayers.some(p => p.id === newLastValidPlayerId)) {
-        // Start searching from the current lastValidPlayerId
-        let nextId = (newLastValidPlayerId + 1) % prevState.players.length;
-        const startId = nextId;
-
-        do {
-          if (activePlayers.some(p => p.id === nextId)) {
-            newLastValidPlayerId = nextId;
-            break;
+      // When calculating newLastValidPlayerId
+      let newLastValidPlayerId;
+      if (isPassing) {
+        newLastValidPlayerId = prevState.lastValidPlayerId;
+      } else {
+        // Only set lastValidPlayerId to current player if they haven't just won
+        const playerJustWon = updatedPlayers[playerId].hand.length === 0;
+        if (!playerJustWon) {
+          newLastValidPlayerId = playerId;
+        } else {
+          // If winning player made last play, find next active player
+          let nextId = (playerId + 1) % prevState.players.length;
+          const startId = nextId;
+          do {
+            if (activePlayers.some(p => p.id === nextId)) {
+              newLastValidPlayerId = nextId;
+              break;
+            }
+            nextId = (nextId + 1) % prevState.players.length;
+          } while (nextId !== startId);
+          // If no active players found, use first active player
+          if (nextId === startId) {
+            newLastValidPlayerId = activePlayers[0]?.id ?? null;
           }
-          nextId = (nextId + 1) % prevState.players.length;
-        } while (nextId !== startId);
-
-        // If we somehow didn't find anyone (shouldn't happen), take first active
-        if (nextId === startId) {
-          newLastValidPlayerId = activePlayers[0]?.id ?? null;
         }
       }
 
